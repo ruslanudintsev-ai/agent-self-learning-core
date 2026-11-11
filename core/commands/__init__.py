@@ -56,10 +56,12 @@ def _quarantine_module(module_name: str, pkg_path: Path, error_exc: Exception) -
         logger.warning(f"Не удалось переместить модуль в карантин {module_name}: {e}")
 
 
-def load_commands(enable_quarantine: bool = True) -> Dict[str, BaseCommand]:
+def load_commands(enable_quarantine: bool = False) -> Dict[str, BaseCommand]:
     """Динамически находит и инстанцирует все команды из пакета core.commands.
 
-    При сбоях в модуле изолирует его в _quarantine/, предотвращая падение CLI.
+    По умолчанию ошибки импорта только пропускают проблемную команду: исходники
+    остаются на месте. Перемещение модуля в _quarantine/ доступно только при
+    явном enable_quarantine=True.
     Возвращает словарь {command_name: cmd_instance}.
     """
     discovered: Dict[str, BaseCommand] = {}

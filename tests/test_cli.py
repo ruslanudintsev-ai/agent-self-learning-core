@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import pytest
 from unittest.mock import patch
 
@@ -44,6 +45,20 @@ class TestCLECore:
         assert data["status"] == "ok"
         assert data["result"] == 35
 
+    def test_exec_timeout_stops_running_code(self, capsys):
+        """Ensure exec terminates a non-terminating snippet at its timeout."""
+        parser = build_parser()
+        args = parser.parse_args(["exec", "--code", "while True: pass", "--timeout", "1", "--json"])
+        cmd = args._handler_command
+        ret = cmd.run(args)
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert ret == 1
+        assert data["status"] == "error"
+        assert data["error_type"] == "TimeoutExpired"
+        assert data["timeout_sec"] == 1
+
     def test_sys_info_json(self, capsys):
         """Проверяет сбор системной информации через sys-info --json."""
         parser = build_parser()
@@ -73,6 +88,17 @@ class TestCLECore:
         assert data["mode"] == "dry-run"
         assert data["commands_count"] >= 6
         assert "### `cle dev-scaffold`" in data["markdown_preview"]
+        assert str(Path(__file__).resolve().parents[1]) not in data["markdown_preview"]
+
+    def test_docgen_redacts_absolute_defaults_outside_project(self):
+        """Absolute defaults outside the project must not leak into generated docs."""
+        from core.commands.system_docgen import SystemDocgenCommand
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--private-path", default=str(Path.home() / "private-workspace"))
+        actions = SystemDocgenCommand()._extract_actions(parser)
+
+        assert actions[0]["default"] == "<absolute path>"
 
     def test_rollback_list_json(self, capsys):
         """Проверяет получение списка снимков отката."""

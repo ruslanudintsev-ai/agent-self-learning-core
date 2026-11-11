@@ -39,11 +39,21 @@ class SystemDocgenCommand(BaseCommand):
             if action.dest == "help":
                 continue
 
+            default = action.default if action.default != argparse.SUPPRESS else None
+            if isinstance(default, (str, Path)):
+                default_path = Path(default)
+                if default_path.is_absolute():
+                    try:
+                        relative = default_path.resolve().relative_to(BASE_DIR.resolve())
+                        default = f"<project>/{relative.as_posix()}"
+                    except (OSError, ValueError):
+                        default = "<absolute path>"
+
             flags.append({
                 "options": ", ".join(action.option_strings) if action.option_strings else action.dest,
                 "required": getattr(action, "required", False),
                 "help": action.help or "Без описания",
-                "default": action.default if action.default != argparse.SUPPRESS else None,
+                "default": default,
             })
         return flags
 
