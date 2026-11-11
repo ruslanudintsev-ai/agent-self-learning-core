@@ -44,6 +44,56 @@
 
 ---
 
+## 🚀 Инструкция по установке в существующий проект
+
+Подключить самообучающееся ядро к любому вашему проекту можно за 1 минуту:
+
+### 1. Клонируйте репозиторий
+```bash
+git clone https://github.com/ruslanudintsev-ai/agent-self-learning-core.git
+```
+
+### 2. Скопируйте ядро в корень вашего проекта
+Перенесите в корень вашего целевого репозитория следующие компоненты:
+```text
+Ваш-Проект/
+├── .agents/          # Правила и процедурная память агента
+├── core/             # Диспетчер CLE и базовые команды
+├── manage.py         # Главная точка входа CLI
+├── cle, cle.cmd      # Быстрые консольные вызовы
+└── tests/            # Набор compliance-тестов
+```
+
+*(Команда для терминала Linux / macOS)*:
+```bash
+cp -r agent-self-learning-core/.agents /путь/к/вашему/проекту/
+cp -r agent-self-learning-core/core /путь/к/вашему/проекту/
+cp agent-self-learning-core/manage.py /путь/к/вашему/проекту/
+cp agent-self-learning-core/cle* /путь/к/вашему/проекту/
+```
+
+*(Команда для Windows PowerShell)*:
+```powershell
+Copy-Item -Recurse agent-self-learning-core\.agents \путь\к\проекту\
+Copy-Item -Recurse agent-self-learning-core\core \путь\к\проекту\
+Copy-Item agent-self-learning-core\manage.py \путь\к\проекту\
+Copy-Item agent-self-learning-core\cle.* \путь\к\проекту\
+```
+
+### 3. Проверьте запуск
+```bash
+# Диагностика
+python manage.py sys-info --json
+
+# Автогенерация справочника команд
+python manage.py system-docgen --json
+
+# Запуск тестов соответствия
+pytest tests/ -v
+```
+
+---
+
 ## 🛠️ Базовый арсенал команд (CLE)
 
 | Команда | Назначение |
