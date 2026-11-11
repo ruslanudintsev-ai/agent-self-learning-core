@@ -1,7 +1,7 @@
 # Agent Self-Learning Core (CLE)
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![License: Private](https://img.shields.io/badge/License-Private-red.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Zero Ad-Hoc Scripts](https://img.shields.io/badge/Policy-Zero--Ad--Hoc-success)](.agents/rules/agent-core.md)
 [![Tests Passing](https://img.shields.io/badge/Tests-25%2F25%20Passing-brightgreen)](tests/)
 
