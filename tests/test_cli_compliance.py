@@ -75,6 +75,31 @@ class TestCommandAuthoringCompliance:
                 f"Свойство name='{name}' команды {cmd.__class__.__name__} нарушает kebab-case"
             )
 
+    def test_import_error_does_not_quarantine_source_by_default(self, monkeypatch):
+        """A transient import error must not move a tracked module by default."""
+        import core.commands as command_package
+
+        quarantined = []
+        monkeypatch.setattr(
+            command_package.pkgutil,
+            "iter_modules",
+            lambda paths: [(None, "broken_probe", False)],
+        )
+        monkeypatch.setattr(
+            command_package.importlib,
+            "import_module",
+            lambda name: (_ for _ in ()).throw(ImportError("missing optional dependency")),
+        )
+        monkeypatch.setattr(
+            command_package,
+            "_quarantine_module",
+            lambda *args, **kwargs: quarantined.append(args[0]),
+        )
+
+        command_package.load_commands()
+
+        assert quarantined == []
+
     def test_service_health_command_execution(self, capsys):
         """Тест выполнения команды service-health в JSON и dry-run режимах."""
         from core.cli import main

@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Zero Ad-Hoc Scripts](https://img.shields.io/badge/Policy-Zero--Ad--Hoc-success)](.agents/rules/agent-core.md)
-[![Tests Passing](https://img.shields.io/badge/Tests-25%2F25%20Passing-brightgreen)](tests/)
+[![Tests Passing](https://img.shields.io/badge/Tests-28%2F28%20Passing-brightgreen)](tests/)
 
 **Промышленная самообучающаяся архитектура для автономных AI-агентов** (Google Antigravity, OpenCode, Claude Code, Cursor, Codex).
 
@@ -101,7 +101,7 @@ pytest tests/ -v
 | **`cle dev-scaffold`** | Автоматическая генерация канонического шаблона новой команды и pytest-тестов. |
 | **`cle dev-validate`** | Pre-commit AST-валидатор модулей на соответствие PEP8, контракту `BaseCommand` и запрет прямых `print()`. |
 | **`cle system-docgen`** | Интроспекция реестра CLI и автогенерация Markdown-справочника в `.agents/skills/agent-cli/SKILL.md`. |
-| **`cle exec`** | Безопасный Python-интерпретатор выражений на лету без создания мусорных ad-hoc скриптов. |
+| **`cle exec`** | Интерпретатор Python-кода с ограничением времени; не является песочницей безопасности. |
 | **`cle rollback`** | Транзакционные снимки конфигураций и мгновенный откат изменений с поддержкой `--dry-run`. |
 | **`cle sys-info`** | Диагностика хоста (CPU, RAM, диск, ОС, версия Python). |
 | **`cle service-health`** | Проверка здоровья компонентов системы и готовности к работе. |
@@ -125,7 +125,7 @@ python manage.py service-health --dry-run --json
 ### Запуск тестов
 ```bash
 pytest tests/ -v
-# 25 passed in <1s
+# 28 passed in <1s
 ```
 
 ---
@@ -148,6 +148,7 @@ agent-self-learning-core/
 │           └── SKILL.md               # Мета-скилл самосовершенствования
 ├── core/
 │   ├── cli.py                         # Динамический маршрутизатор команд
+│   ├── exec_worker.py                 # Тайм-лимитируемый subprocess для cle exec
 │   └── commands/
 │       ├── base.py                    # BaseCommand, OutputBudget, Target Host Guard
 │       ├── dev_scaffold.py            # Генератор команд и тестов

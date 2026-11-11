@@ -7,18 +7,14 @@ Zero-Context Code Interpreter для Metric QA Lab CLI.
 from __future__ import annotations
 
 import argparse
-import contextlib
-from datetime import datetime, timezone
-import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
-import time
-import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-from core.commands.base import BaseCommand, CommandError
+from core.commands.base import BaseCommand
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -80,10 +76,14 @@ def _sanitize_for_json(val: Any) -> Any:
 
 
 class ExecCommand(BaseCommand):
-    """Выполнение Python-выражения или скрипта в контексте проекта без временных файлов."""
+    """Выполнение Python-кода в отдельном процессе с ограничением времени.
+
+    Команда запускает произвольный код текущего пользователя и не является
+    песочницей безопасности.
+    """
 
     name = "exec"
-    description = "Выполнение Python-выражения или скрипта в контексте проекта без создания временных файлов"
+    description = "Выполнение Python-кода в отдельном процессе с ограничением времени (не песочница безопасности)"
 
     def configure_parser(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -108,10 +108,18 @@ class ExecCommand(BaseCommand):
         code_str = (args.code or "").strip()
         as_json = getattr(args, "json", False)
         is_dry_run = getattr(args, "dry_run", False)
+        timeout = getattr(args, "timeout", 15)
 
         if not code_str:
             self.output(
                 {"status": "error", "message": "Параметр --code не может быть пустым"},
+                as_json=as_json,
+            )
+            return 1
+
+        if timeout <= 0:
+            self.output(
+                {"status": "error", "message": "Параметр --timeout должен быть больше нуля"},
                 as_json=as_json,
             )
             return 1
@@ -151,58 +159,47 @@ class ExecCommand(BaseCommand):
                 )
                 return 1
 
-        # 2. Подготовка изолированного скоупа окружения проекта
-        config_obj = ProjectConfig(BASE_DIR)
-
-        scope: Dict[str, Any] = {
-            "__builtins__": __builtins__,
-            "Path": Path,
-            "json": json,
-            "os": os,
-            "sys": sys,
-            "time": time,
-            "datetime": datetime,
-            "timezone": timezone,
-            "config": config_obj,
-            "BASE_DIR": BASE_DIR,
-            "result": None,
-        }
-
-        stdout_buf = io.StringIO()
-        stderr_buf = io.StringIO()
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "core.exec_worker"],
+                input=json.dumps({"code": code_str}),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=str(BASE_DIR),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            self.output(
+                {
+                    "status": "error",
+                    "error_type": "TimeoutExpired",
+                    "message": f"Выполнение прервано по таймауту ({timeout} сек.)",
+                    "timeout_sec": timeout,
+                },
+                as_json=as_json,
+            )
+            return 1
+        except OSError as exc:
+            self.output(
+                {"status": "error", "error_type": type(exc).__name__, "message": str(exc)},
+                as_json=as_json,
+            )
+            return 1
 
         try:
-            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
-                # Сначала пробуем как eval-выражение (для однострочников, возвращающих значение)
-                try:
-                    compiled = compile(code_str, "<cle-exec>", "eval")
-                    scope["result"] = eval(compiled, scope)
-                except SyntaxError:
-                    # Если многострочный блок или инструкция с присваиванием — выполняем через exec
-                    compiled = compile(code_str, "<cle-exec>", "exec")
-                    exec(compiled, scope)
-
-            raw_stdout = stdout_buf.getvalue().strip()
-            raw_stderr = stderr_buf.getvalue().strip()
-            raw_result = scope.get("result")
-
-            payload: Dict[str, Any] = {
-                "status": "ok",
-                "result": _sanitize_for_json(raw_result),
-                "stdout": raw_stdout if raw_stdout else None,
-                "stderr": raw_stderr if raw_stderr else None,
-            }
-            self.output(payload, as_json=as_json)
-            return 0
-
-        except Exception as exc:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
             payload = {
                 "status": "error",
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-                "traceback": traceback.format_exc(),
-                "stdout": stdout_buf.getvalue().strip() or None,
-                "stderr": stderr_buf.getvalue().strip() or None,
+                "error_type": "WorkerProtocolError",
+                "message": "CLE exec worker returned invalid JSON",
+                "return_code": completed.returncode,
+                "stdout": completed.stdout.strip() or None,
+                "stderr": completed.stderr.strip() or None,
             }
-            self.output(payload, as_json=as_json)
-            return 1
+
+        self.output(payload, as_json=as_json)
+        return 0 if completed.returncode == 0 and payload.get("status") == "ok" else 1
