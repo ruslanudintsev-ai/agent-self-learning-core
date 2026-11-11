@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / ASTs
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment and sensitive credentials
+.env
+.env.*
+config.local.json
+credentials/*
+!credentials/.gitignore
+!credentials/example_credentials.json
+*token*
+*.key
+*.pem
+*.secret
+
+# Test & IDE caches
+.pytest_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+
+# Logs and runtime data
+logs/*
+!logs/.gitkeep
+*.log
+
+# CLI runtime state & checkpoints
+.cle_state/
+.cle_cache/
+core/commands/_quarantine/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
