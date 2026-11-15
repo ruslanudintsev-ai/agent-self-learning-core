@@ -82,8 +82,8 @@ class ToolContext:
             from googleapiclient.discovery import build
 
             key_file = credentials_path or os.environ.get(
-                "GSC_CREDENTIALS_FILE",
-                str(self.base_dir / "repos" / "crypto-casino-hub" / "seo_workspace" / "credentials" / "gsc_service_account.json"),
+                "GSC_SERVICE_ACCOUNT_FILE",
+                os.path.join(os.path.expanduser("~"), ".secrets", "google", "service-account.json"),
             )
             creds = service_account.Credentials.from_service_account_file(
                 key_file, scopes=["https://www.googleapis.com/auth/webmasters.readonly"]
