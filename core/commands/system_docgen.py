@@ -1,6 +1,15 @@
 """core/commands/system_docgen.py
-Команда автогенерации SKILL.md на основе зарегистрированных команд CLI.
-Извлекает флаги, типы и справку из ArgumentParser и компилирует чистые таблицы.
+Команда автогенерации документации CLI на основе зарегистрированных команд.
+
+Генерирует два файла:
+  SKILL.md      — короткий индекс: команда + назначение одной строкой + частые рецепты;
+  reference.md  — полные таблицы флагов, значения по умолчанию и все рецепты.
+
+Причина разделения: SKILL.md попадает в контекст агента целиком, поэтому он
+должен оставаться коротким. Полные флаги нужны редко и загружаются по ссылке.
+
+Абсолютные пути в значениях по умолчанию не попадают в документацию: внутри
+проекта они заменяются на `<project>/...`, вне проекта — на `<absolute path>`.
 """
 
 from __future__ import annotations
@@ -14,10 +23,57 @@ from core.commands import load_commands
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+RECIPES = [
+    "1. **Создание новой команды (Dev Scaffold):**",
+    "   ```bash",
+    "   cle dev-scaffold --command cache-cleaner",
+    "   ```",
+    "2. **Проверка качества и AST валидация:**",
+    "   ```bash",
+    "   cle dev-validate --file core/commands/cache_cleaner.py --json",
+    "   ```",
+    "3. **Актуализация документации скила на лету:**",
+    "   ```bash",
+    "   cle system-docgen",
+    "   ```",
+    "4. **Безопасные ad-hoc вычисления без создания файлов (Zero-Context Interpreter):**",
+    "   ```bash",
+    '   cle exec --code "2 + 2" --json',
+    "   cle exec --code \"import os; result = os.listdir('.')\" --json",
+    "   ```",
+    "5. **Управление снимками конфигураций и откат:**",
+    "   ```bash",
+    '   cle rollback create --reason "before_update" --json',
+    "   cle rollback list --json",
+    "   cle rollback restore --last --dry-run --json",
+    "   cle rollback restore --last --json",
+    "   ```",
+    "6. **Диагностика системы и процессов:**",
+    "   ```bash",
+    "   cle sys-info --json",
+    "   cle service-health --json",
+    "   ```",
+]
+
+QUICK_RECIPES = [
+    "1. **Многошаговая задача за один вызов (HTTP + SSL + GSC + SSH):**",
+    "   ```bash",
+    '   cle batch-exec --script "res = [ctx.http_get(s) for s in sites]; result = res" --json',
+    "   ```",
+    "2. **Разовая проверка без файлов:**",
+    "   ```bash",
+    '   cle exec --code "2 + 2" --json',
+    "   ```",
+    "3. **Снять снимок конфигов перед правкой:**",
+    "   ```bash",
+    '   cle rollback create --reason "before_update" --json',
+    "   ```",
+]
+
 
 class SystemDocgenCommand(BaseCommand):
     name: str = "system-docgen"
-    description: str = "Автогенерация SKILL.md на основе зарегистрированных команд CLI"
+    description: str = "Автогенерация SKILL.md (индекс) и reference.md (полные флаги) на основе команд CLI"
 
     def configure_parser(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -57,86 +113,94 @@ class SystemDocgenCommand(BaseCommand):
             })
         return flags
 
-    def run(self, args: argparse.Namespace) -> int:
-        commands_map = load_commands()
-        as_json = getattr(args, "json", False)
+    def _command_parser(self, cmd_name: str, cmd: Any) -> argparse.ArgumentParser:
+        temp_parser = argparse.ArgumentParser(prog=f"cle {cmd_name}", add_help=False)
+        if hasattr(cmd, "configure_parser"):
+            cmd.configure_parser(temp_parser)
+        else:
+            cmd.add_arguments(temp_parser)
+        return temp_parser
 
-        md_lines = [
+    def _render_index(self, commands_map: Dict[str, Any]) -> str:
+        """Короткий индекс: каждая команда — заголовок и одна строка назначения."""
+        lines = [
             "---",
             "name: agent-cli",
             'description: "Автоматически сгенерированный справочник интерфейса CLI. Используй эти команды вместо одноразовых ad-hoc скриптов."',
             "---",
             "",
-            "# Справочник команд Command Layer Engine (CLE)",
+            "# CLE — индекс команд",
             "",
-            "> Данный файл сгенерирован автоматически через `cle system-docgen`. Не редактируйте вручную.",
+            "> Сгенерировано `cle system-docgen`. Полные флаги, значения по умолчанию и все",
+            "> рецепты — в `reference.md` в этой же папке. Читай его только когда нужен",
+            "> конкретный флаг: держать таблицы в контексте незачем.",
             "",
-            "## Доступные команды",
+            "## Команды",
             "",
         ]
-
-        # Сортировка по имени модульных команд для детерминированного вывода
         for cmd_name in sorted(commands_map.keys()):
             cmd = commands_map[cmd_name]
-            md_lines.append(f"### `cle {cmd_name}`")
-            md_lines.append(f"**Назначение:** {cmd.description or getattr(cmd, 'help', None) or 'Описание отсутствует'}\n")
+            purpose = cmd.description or getattr(cmd, "help", None) or "Описание отсутствует"
+            lines.append(f"### `cle {cmd_name}`")
+            lines.append(f"{purpose}")
+            lines.append("")
 
-            temp_parser = argparse.ArgumentParser(prog=f"cle {cmd_name}", add_help=False)
-            if hasattr(cmd, "configure_parser"):
-                cmd.configure_parser(temp_parser)
-            else:
-                cmd.add_arguments(temp_parser)
-            actions = self._extract_actions(temp_parser)
+        lines.extend([
+            "## Системные флаги",
+            "- `--json` — обязателен при вызове агентом: структурированный ответ вместо текста.",
+            "- `--dry-run` — проверка без выполнения; обязательна для деструктивных команд.",
+            "",
+            "## Рецепты (частое)",
+            *QUICK_RECIPES,
+            "",
+            "Полный список рецептов — `reference.md`.",
+        ])
+        return "\n".join(lines) + "\n"
 
+    def _render_reference(self, commands_map: Dict[str, Any]) -> str:
+        """Полный справочник: таблицы флагов по каждой команде и все рецепты."""
+        lines = [
+            "# CLE — полный справочник",
+            "",
+            "> Сгенерировано `cle system-docgen`. Таблицы флагов и значения по умолчанию.",
+            "> Индекс команд и частые рецепты — в `SKILL.md`.",
+            "",
+            "## Команды и флаги",
+            "",
+        ]
+        for cmd_name in sorted(commands_map.keys()):
+            cmd = commands_map[cmd_name]
+            lines.append(f"### `cle {cmd_name}`")
+            lines.append(f"**Назначение:** {cmd.description or getattr(cmd, 'help', None) or 'Описание отсутствует'}\n")
+
+            actions = self._extract_actions(self._command_parser(cmd_name, cmd))
             if actions:
-                md_lines.append("| Аргумент | Обязательный | Описание | По умолчанию |")
-                md_lines.append("| :--- | :---: | :--- | :--- |")
+                lines.append("| Аргумент | Обязательный | Описание | По умолчанию |")
+                lines.append("| :--- | :---: | :--- | :--- |")
                 for act in actions:
                     req_str = "Да" if act["required"] else "Нет"
                     default_str = f"`{act['default']}`" if act["default"] is not None else "-"
-                    md_lines.append(f"| `{act['options']}` | {req_str} | {act['help']} | {default_str} |")
-                md_lines.append("")
+                    lines.append(f"| `{act['options']}` | {req_str} | {act['help']} | {default_str} |")
+                lines.append("")
             else:
-                md_lines.append("*Команда не принимает дополнительных аргументов.*\n")
+                lines.append("*Команда не принимает дополнительных аргументов.*\n")
 
-        md_lines.extend([
-            "## Общие системные флаги",
+        lines.extend([
+            "## Системные флаги",
             "- `--json`: Обязательный флаг при вызове агентом для получения структурированного JSON ответа.",
             "- `--dry-run`: Симуляция выполнения для команд с деструктивными операциями.",
             "",
             "## Рецепты вызовов",
-            "1. **Создание новой команды (Dev Scaffold):**",
-            "   ```bash",
-            "   cle dev-scaffold --command cache-cleaner",
-            "   ```",
-            "2. **Проверка качества и AST валидация:**",
-            "   ```bash",
-            "   cle dev-validate --file core/commands/cache_cleaner.py --json",
-            "   ```",
-            "3. **Актуализация документации скила на лету:**",
-            "   ```bash",
-            "   cle system-docgen",
-            "   ```",
-            "4. **Безопасные ad-hoc вычисления без создания файлов (Zero-Context Interpreter):**",
-            "   ```bash",
-            '   cle exec --code "2 + 2" --json',
-            '   cle exec --code "import os; result = os.listdir(\'.\')" --json',
-            "   ```",
-            "5. **Управление снимками конфигураций и откат:**",
-            "   ```bash",
-            '   cle rollback create --reason "before_update" --json',
-            "   cle rollback list --json",
-            "   cle rollback restore --last --dry-run --json",
-            "   cle rollback restore --last --json",
-            "   ```",
-            "6. **Диагностика системы и процессов:**",
-            "   ```bash",
-            "   cle sys-info --json",
-            "   cle service-health --json",
-            "   ```",
+            *RECIPES,
         ])
+        return "\n".join(lines) + "\n"
 
-        rendered_markdown = "\n".join(md_lines) + "\n"
+    def run(self, args: argparse.Namespace) -> int:
+        commands_map = load_commands()
+        as_json = getattr(args, "json", False)
+
+        index_md = self._render_index(commands_map)
+        reference_md = self._render_reference(commands_map)
 
         if getattr(args, "dry_run", False):
             self.output(
@@ -144,16 +208,19 @@ class SystemDocgenCommand(BaseCommand):
                     "status": "ok",
                     "mode": "dry-run",
                     "commands_count": len(commands_map),
-                    "markdown_preview": rendered_markdown,
+                    "markdown_preview": index_md,
+                    "reference_preview": reference_md,
                 },
                 as_json=as_json,
             )
             return 0
 
         target_path = Path(args.output)
+        reference_path = target_path.parent / "reference.md"
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(rendered_markdown, encoding="utf-8")
+            target_path.write_text(index_md, encoding="utf-8")
+            reference_path.write_text(reference_md, encoding="utf-8")
         except OSError as exc:
             self.output(
                 {"status": "error", "message": f"Не удалось записать файл: {exc}"},
@@ -165,6 +232,7 @@ class SystemDocgenCommand(BaseCommand):
             {
                 "status": "ok",
                 "saved_to": str(target_path),
+                "reference_saved_to": str(reference_path),
                 "commands_documented": len(commands_map),
             },
             as_json=as_json,
